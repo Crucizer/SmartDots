@@ -37,12 +37,10 @@ class Dot {
             // Update position based on velocity and direction
             this.x += Math.cos(this.angle) * this.vel;
             this.y += Math.sin(this.angle) * this.vel;
-
-            // Clear canvas and draw dot at new position
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            this.drawDot();
             
         }
+        this.drawDot();
+
     }
 
     drawDot () {
@@ -58,17 +56,39 @@ class Dot {
     }
 }
 
-var dot1 = new Dot(canvas.width/2,canvas.height/2);
+class Population {
 
+    constructor(size){
+        this.size = size;
+        this.dots = [];
+        this.initialX = canvas.width/2;
+        this.initialY = canvas.height/2;
+
+        for(let i=0;i<size;i++) {
+            this.dots[i] = new Dot(this.initialX, this.initialY);
+        }
+    }
+
+    moveDots() {
+        for(let i =0; i<this.size;i++) {
+            this.dots[i].move();
+        }
+    }
+
+}
+
+var newPop = new Population(100);
 
 function gameLoop() {
+    // Clear the entire canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     requestAnimationFrame(gameLoop);
 
     currentTime = new Date().getTime();
     delta = currentTime - lastTime;
 
     if (delta > INTERVAL) {
-        dot1.move();
+        newPop.moveDots();
     }
 }
 
