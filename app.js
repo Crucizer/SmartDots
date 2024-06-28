@@ -1,6 +1,6 @@
 var canvas = document.querySelector('canvas');
 canvas.width = window.innerWidth-50;
-canvas.height = window.innerHeight-50;
+canvas.height = window.innerHeight-100;
 
 var ctx = canvas.getContext('2d');
 const PI = 3.14159;
@@ -15,6 +15,12 @@ const GOAL_Y = 30;
 const GOAL_X = canvas.width/2;
 const GOAL_SIZE = 20;
 
+const initialY = canvas.height/2+200;
+const initialX = canvas.width/2;
+
+gen = 0;
+cur_gen = document.querySelector(".gen");
+
 class Dot {
     constructor(x,y, color="black", size=10) {
         this.x = x;
@@ -22,7 +28,7 @@ class Dot {
         this.color = color;
         this.size = size;
 
-        this.vel = 50;
+        this.vel = 25;
         this.acc = 3;
 
         this.dead = false;
@@ -40,12 +46,7 @@ class Dot {
         this.death();
 
         if (!this.dead){
-            // Randomize direction periodically
-            if (Math.random() < 0.1) { // 10% chance to change direction each frame
-            this.angle = this.brain.directions[this.step];this.step++;
-            }
-
-
+            this.angle = this.brain.directions[this.step]; this.step++;
             // Update position based on velocity and direction
             this.x += Math.cos(this.angle) * this.vel;
             this.y += Math.sin(this.angle) * this.vel;
@@ -64,30 +65,41 @@ class Dot {
         
         // Collision detection with the boundaries
         if (this.x < this.size || this.x > canvas.width - this.size || this.y < this.size || this.y > canvas.height - this.size) {
-            // return true;
             this.dead = true;
         }
-
         // collision detection with goalDot
         var distanceGoal = ((GOAL_X-this.x)**2 + (GOAL_Y-this.y)**2)**0.5;
+
         if (distanceGoal < GOAL_SIZE/2){
-            // return true;
             this.dead = true;
             this.reachedGoal = true;
+        }
+
+        if (this.step == 400) {
+            this.dead = true;
         }
     }
 
     calculateFitness () {
         // Pythagoras 
         var distanceGoal = ((GOAL_X-this.x)**2 + (GOAL_Y-this.y)**2)**0.5;
+
+        if (this.reachedGoal == true) {
+            this.fitness = 1;
+        }
+        else{
         this.fitness = 1/distanceGoal**2;
+    }
+
+        // var distanceGoal = ((GOAL_X - this.x) ** 2 + (GOAL_Y - this.y) ** 2) ** 0.5;
+        // this.fitness = distanceGoal === 0 ? 1 : 1 / distanceGoal;
 
         
     }
 
     gimmeBaby () {
         let baby = new Dot(canvas.width/2, canvas.height/2);
-        baby.brain = this.brain;
+        baby.brain.directions = this.brain.cloneMe();
 
         return baby;
     }
@@ -104,8 +116,9 @@ class Brain {
     }
 
     cloneMe () {
-        let clone = this.directions;
-        return clone;
+        // I was doing this earlier, which is wrong as this returns a deep copy, I need a shallow copy though
+        // let clone = this.directions;
+        return this.directions.slice(); // returns a shallow copy
     }
 
     mutate() {
@@ -124,19 +137,22 @@ class Population {
     constructor(size){
         this.size = size;
         this.dots = [];
-        this.initialX = canvas.width/2;
-        this.initialY = canvas.height/2+200;
-
-        this.gen = 0;
+        this.isBest = false;
+        this.minStep = this.size;
 
         for(let i=0;i<size;i++) {
-            this.dots[i] = new Dot(this.initialX, this.initialY);
-        }
-    }
+            this.dots[i] = new Dot(initialX, initialY);
+            }
+        }   
 
     moveDots() {
         for(let i =0; i<this.size;i++) {
+            if (this.dots[i].brain.step > this.minStep) {
+                this.dots[i].dead = true;
+            }
+            else{
             this.dots[i].move();
+            }
         }
     }
 
@@ -146,9 +162,10 @@ class Population {
         }
     }
 
-    allDotsDead () {
-        for(let i=0;i<this.size;i++) {
-            if( this.dots[i].dead == false) {
+    allDotsDead() {
+        let i =0;
+        for (i = 0; i < this.size; i++) {
+            if (!this.dots[i].dead) {
                 return false;
             }
         }
@@ -163,55 +180,70 @@ class Population {
             this.fitnessSum += this.dots[i].fitness;
         }
 
-        return this.fitnessSum;
     }
 
     selectParent() {
-        // if a dot has 2x fitness, then it should be twice as likely to get selected as the one with x fitness
         this.calculateFitnessSum();
-        let rand = Math.random()*this.fitnessSum;
+        let rand = Math.random() * this.fitnessSum;
         let runningSum = 0;
 
-        for (let i=0;i<this.size;i++) {
-            if(runningSum > rand) {
+        for (let i = 0; i < this.size; i++) {
+            runningSum += this.dots[i].fitness;
+            if (runningSum > rand) {
                 return this.dots[i];
             }
-            else {
-                runningSum += this.dots[i].fitness;
-            }
         }
 
-        // THE CODE SHOULD NOT REACH HERE, CHECK WHY IS THAT HAPPENING
-        // In case the loop completes without returning, fall back to a default dot
-        return this.dots[this.size - 1];
-        
+        // Code should never reach this point
+        return null;
     }
 
-    naturalSelection () {
-
+    naturalSelection() {
         let newDots = [];
-        for (let i=0;i<this.size;i++) {
-            newDots.push(new Dot(canvas.width/2, canvas.height/2)) // next generation
-        }
-        this.calculateFitnessSum(); 
 
-        for (let i=0;i<this.size;i++){
-            // select Parent
+        // Putting the best dot directly into the next generation
+        this.setBestDot();
+        newDots[0] = this.dots[this.bestDot].gimmeBaby();
+        Object.assign(newDots[0], {
+            isBest: true,
+            size: 30,
+            color: "green",
+        })
+        for (let i = 1; i < this.size; i++) {
+            // select parent
             let parent = this.selectParent();
-
-            // clone them babies
-            newDots[i] = parent.gimmeBaby();
-    }
+            // clone them baby
+            newDots.push(parent.gimmeBaby());
+        }
         this.dots = newDots;
-        this.gen++;
-
+        cur_gen.innerText = `Generation: ${gen}`;
+        gen++;
     }
 
     mutateDemBabies() {
-        for (let i=0;i<this.size;i++){
+        // need not to mutate the best dot
+        for (let i=1;i<this.size;i++){
             this.dots[i].brain.mutate();
         }
-     }
+    }
+
+    setBestDot() {
+        this.max = 0;
+        let maxIndex = 0;
+
+        for(let i=0;i<this.size;i++) {
+            if(this.dots[i].fitness > this.max){
+                this.max = this.dots[i].fitness;
+                maxIndex = i;
+            }
+        }
+
+        this.bestDot = maxIndex;
+
+        if(this.dots[this.bestDot].reachedGoal) {
+            this.minStep = this.dots[this.bestDot].brain.step;
+        }
+    }
 
 }
 
@@ -230,7 +262,7 @@ function gameLoop() {
 
     currentTime = new Date().getTime();
     delta = currentTime - lastTime;
-    lastTime = currentTime - lastTime;
+    lastTime = currentTime- lastTime;
 
     if (delta > INTERVAL) {
         test.moveDots();
@@ -238,7 +270,6 @@ function gameLoop() {
     }
 
     if (test.allDotsDead()) {
-        
         // start genetic algorithm
         test.calculateFitness();
         test.naturalSelection();
